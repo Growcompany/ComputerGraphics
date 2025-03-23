@@ -39,19 +39,19 @@ public:
 // and generates a ray for each pixel.
 class Camera {
 public:
-    vec3 eye;
+    vec3 eyepoint;
     float l, r, b, t, d;
     int nx, ny;
 
-    Camera(const vec3& eye, float l, float r, float b, float t, float d, int nx, int ny)
-        : eye(eye), l(l), r(r), b(b), t(t), d(d), nx(nx), ny(ny) {
+    Camera(const vec3& eyepoint, float l, float r, float b, float t, float d, int nx, int ny)
+        : eyepoint(eyepoint), l(l), r(r), b(b), t(t), d(d), nx(nx), ny(ny) {
     }
 
     Ray getRay(int ix, int iy) const {
         float u = l + (r - l) * (ix + 0.5f) / nx;
         float v = b + (t - b) * (iy + 0.5f) / ny;
         vec3 pixelPos(u, v, -d);
-        return Ray(eye, pixelPos - eye);
+        return Ray(eyepoint, pixelPos - eyepoint);
     }
 };
 
