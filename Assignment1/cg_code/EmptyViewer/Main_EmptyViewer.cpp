@@ -27,124 +27,140 @@ int Height = 512;
 std::vector<float> OutputImage;
 // -------------------------------------------------
 
-
-
-void render()
-{
-	//Create our image. We don't want to do this in 
-	//the main loop since this may be too slow and we 
-	//want a responsive display of our beautiful image.
-	//Instead we draw to another buffer and copy this to the 
-	//framebuffer using glDrawPixels(...) every refresh
-	OutputImage.clear();
-	for (int j = 0; j < Height; ++j) 
-	{
-		for (int i = 0; i < Width; ++i) 
-		{
-			// ---------------------------------------------------
-			// --- Implement your code here to generate the image
-			// ---------------------------------------------------
-
-			// draw a red rectangle in the center of the image
-			vec3 color = glm::vec3(0.5f, 0.5f, 0.5f); // grey color [0,1] in RGB channel
-			
-			if (i > Width / 4 && i < 3 * Width / 4 
-				&& j > Height / 4 && j < 3 * Height / 4)
-			{
-				color = glm::vec3(1.0f, 0.0f, 0.0f); // red color [0,1] in RGB channel
-			}
-			
-			// set the color
-			OutputImage.push_back(color.x); // R
-			OutputImage.push_back(color.y); // G
-			OutputImage.push_back(color.z); // B
-		}
-	}
-}
-
-// Ray 구조체: 광선의 원점과 방향
-struct Ray {
-	vec3 origin;
-	vec3 direction;
+// Stores the ray's origin and direction; used as the ray object from getRay().
+class Ray {
+public:
+    vec3 origin;
+    vec3 direction;
+    Ray(const vec3& o, const vec3& d) : origin(o), direction(normalize(d)) {}
 };
 
-// 구와의 교차 검사 함수
-// ray와 중심 center, 반지름 radius인 구의 교차 여부를 검사합니다.
-// tMin, tMax 사이에 교차점이 존재하면 true를 반환합니다.
-bool intersectSphere(const Ray& ray, const vec3& center, float radius, float tMin, float tMax, float& tHit) {
-	vec3 oc = ray.origin - center;
-	float A = dot(ray.direction, ray.direction); // 보통 정규화되었으므로 A=1
-	float B = 2.0f * dot(ray.direction, oc);
-	float C = dot(oc, oc) - radius * radius;
-	float discriminant = B * B - 4 * A * C;
-	if (discriminant < 0) return false;
-	float sqrtDisc = glm::sqrt(discriminant);
-	// 더 작은 근을 우선 선택
-	float t1 = (-B - sqrtDisc) / (2 * A);
-	if (t1 > tMin && t1 < tMax) { tHit = t1; return true; }
-	float t2 = (-B + sqrtDisc) / (2 * A);
-	if (t2 > tMin && t2 < tMax) { tHit = t2; return true; }
-	return false;
-}
+// Stores camera parameters (eye position, viewing region, image plane distance, resolution)
+// and generates a ray for each pixel.
+class Camera {
+public:
+    vec3 eye;
+    float l, r, b, t, d;
+    int nx, ny;
 
-// Scene.trace 함수: 주어진 광선과 장면의 객체들 간의 교차를 검사
-// tMin부터 tMax 사이에 교차하는 객체가 있으면 white, 아니면 black을 반환합니다.
-vec3 trace(const Ray& ray, float tMin, float tMax) {
-	float tHit;
-	// 평면 P: y = -2와의 교차 검사
-	if (ray.direction.y != 0.0f) {
-		float tPlane = (-2.0f - ray.origin.y) / ray.direction.y;
-		if (tPlane > tMin && tPlane < tMax)
-			return vec3(1.0f); // white
-	}
-	// 구 S1: 중심 (-4, 0, -7), 반지름 1
-	if (intersectSphere(ray, vec3(-4.0f, 0.0f, -7.0f), 1.0f, tMin, tMax, tHit))
-		return vec3(1.0f); // white
-	// 구 S2: 중심 (0, 0, -7), 반지름 2
-	if (intersectSphere(ray, vec3(0.0f, 0.0f, -7.0f), 2.0f, tMin, tMax, tHit))
-		return vec3(1.0f); // white
-	// 구 S3: 중심 (4, 0, -7), 반지름 1
-	if (intersectSphere(ray, vec3(4.0f, 0.0f, -7.0f), 1.0f, tMin, tMax, tHit))
-		return vec3(1.0f); // white
+    Camera(const vec3& eye, float l, float r, float b, float t, float d, int nx, int ny)
+        : eye(eye), l(l), r(r), b(b), t(t), d(d), nx(nx), ny(ny) {
+    }
 
-	return vec3(0.0f); // black
-}
+    Ray getRay(int ix, int iy) const {
+        float u = l + (r - l) * (ix + 0.5f) / nx;
+        float v = b + (t - b) * (iy + 0.5f) / ny;
+        vec3 pixelPos(u, v, -d);
+        return Ray(eye, pixelPos - eye);
+    }
+};
 
-// render3 함수: 모든 픽셀에 대해 카메라의 getRay를 호출하고, scene.trace를 통해 색상을 결정합니다.
-void render3() {
-	OutputImage.clear();
+// Abstract class for scene surfaces.
+// All surfaces must implement the intersect function.
+class Surface {
+public:
+    virtual bool intersect(const Ray& ray, float tMin, float tMax, float& tHit) const = 0;
+};
 
-	// 카메라 설정 (eye point)
-	vec3 eye(0.0f, 0.0f, 0.0f);
-	// 이미지 평면의 경계 설정 (view window)
-	float l = -0.1f, r = 0.1f, b = -0.1f, t = 0.1f;
-	float d = 0.1f; // 이미지 평면까지의 거리 (카메라의 -z 방향)
+// Represents a sphere surface with center and radius information.
+// Implements ray intersection testing.
+class Sphere : public Surface {
+public:
+    vec3 center;
+    float radius;
 
-	int nx = Width;   // 이미지 가로 해상도
-	int ny = Height;  // 이미지 세로 해상도
+    Sphere(const vec3& center, float radius) : center(center), radius(radius) {}
 
-	// 모든 픽셀에 대해 반복합니다.
-	for (int iy = 0; iy < ny; ++iy) {
-		for (int ix = 0; ix < nx; ++ix) {
-			// 픽셀 중심 좌표 계산 (이미지 평면 상)
-			float u = l + (r - l) * (ix + 0.5f) / nx;
-			float v = b + (t - b) * (iy + 0.5f) / ny;
-			vec3 pixelPos(u, v, -d);
+    virtual bool intersect(const Ray& ray, float tMin, float tMax, float& tHit) const {
+        vec3 oc = ray.origin - center;
+        float A = dot(ray.direction, ray.direction);
+        float B = 2.0f * dot(ray.direction, oc);
+        float C = dot(oc, oc) - radius * radius;
+        float discriminant = B * B - 4 * A * C;
+        if (discriminant < 0)
+            return false;
+        float sqrtDisc = glm::sqrt(discriminant);
+        float t1 = (-B - sqrtDisc) / (2 * A);
+        if (t1 > tMin && t1 < tMax) { tHit = t1; return true; }
+        float t2 = (-B + sqrtDisc) / (2 * A);
+        if (t2 > tMin && t2 < tMax) { tHit = t2; return true; }
+        return false;
+    }
+};
 
-			// 카메라의 getRay 역할: 눈에서 픽셀 중심을 향하는 광선 생성
-			Ray ray;
-			ray.origin = eye;
-			ray.direction = normalize(pixelPos - eye);
+// Set Plane
+class Plane : public Surface {
+public:
+    float y; // set y
 
-			// scene.trace를 호출하여 색상을 결정 (교차하면 white, 아니면 black)
-			vec3 color = trace(ray, 0.0f, 1e30f);
+    Plane(float y) : y(y) {}
 
-			// 계산된 색상을 이미지 버퍼에 저장합니다.
-			OutputImage.push_back(color.r);
-			OutputImage.push_back(color.g);
-			OutputImage.push_back(color.b);
-		}
-	}
+    virtual bool intersect(const Ray& ray, float tMin, float tMax, float& tHit) const {
+        if (ray.direction.y == 0.0f)
+            return false;
+        float t = (y - ray.origin.y) / ray.direction.y;
+        if (t > tMin && t < tMax) {
+            tHit = t;
+            return true;
+        }
+        return false;
+    }
+};
+
+// Manages scene surfaces and finds the nearest ray hit.
+class Scene {
+public:
+    std::vector<Surface*> surfaces;
+
+    void addSurface(Surface* surface) {
+        surfaces.push_back(surface);
+    }
+
+    vec3 trace(const Ray& ray, float tMin, float tMax) const {
+        float closest_t = tMax;
+        const Surface* hitSurface = nullptr;
+        float tHit;
+        for (size_t i = 0; i < surfaces.size(); i++) {
+            if (surfaces[i]->intersect(ray, tMin, closest_t, tHit)) {
+                closest_t = tHit;
+                hitSurface = surfaces[i];
+            }
+        }
+        if (hitSurface != nullptr)
+            return vec3(1.0f); // White if hit.
+        else
+			return vec3(0.0f); // else Black.
+    }
+};
+
+
+// Set Camera, Scene and Create ray and check the intersection and save the result color to the OutputImage
+void render() {
+    OutputImage.clear();
+
+    // Camera Eye point (0,0,0), Viewing region (l,r,b,t,d), image size
+    Camera camera(vec3(0.0f, 0.0f, 0.0f), -0.1f, 0.1f, -0.1f, 0.1f, 0.1f, Width, Height);
+
+    // Scene Setting
+    Scene scene;
+    scene.addSurface(new Plane(-2.0f));                     // Plane P: y = -2
+    scene.addSurface(new Sphere(vec3(-4.0f, 0.0f, -7.0f), 1.0f)); // Sphere S1
+    scene.addSurface(new Sphere(vec3(0.0f, 0.0f, -7.0f), 2.0f));  // Sphere S2
+    scene.addSurface(new Sphere(vec3(4.0f, 0.0f, -7.0f), 1.0f));  // Sphere S3
+
+	// Check every pixel
+    for (int iy = 0; iy < Height; ++iy) {
+        for (int ix = 0; ix < Width; ++ix) {
+			// Create ray
+            Ray ray = camera.getRay(ix, iy);
+			// Check the intersection and get the color
+            vec3 color = scene.trace(ray, 0.0f, 1e30f);
+			// set the color
+            OutputImage.push_back(color.r);
+            OutputImage.push_back(color.g);
+            OutputImage.push_back(color.b);
+        }
+    }
 }
 
 
@@ -170,7 +186,7 @@ void resize_callback(GLFWwindow*, int nw, int nh)
 	//Reserve memory for our render so that we don't do 
 	//excessive allocations and render the image
 	OutputImage.reserve(Width * Height * 3);
-	render3();
+    render();
 }
 
 
