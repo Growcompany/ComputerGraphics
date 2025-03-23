@@ -1,4 +1,4 @@
-# Computer Graphics Assignments1
+# Computer Graphics Assignment1
 
 ## Overview
 이 프로젝트는 평면과 세 개의 구로 구성된 장면을 레이 트레이싱 알고리즘으로 렌더링하는 과제입니다.
